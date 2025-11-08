@@ -150,8 +150,7 @@
   $(window).off("keydown").on("keydown", function(e){
     // Undvik att stjäla tangenter när fokus är i inmatningsfält eller contenteditable
     const tag = (e.target.tagName || "").toUpperCase();
-    const isEditable = e.target.isContentEditable ||
-                       tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
+    const isEditable = e.target.isContentEditable || tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT";
     if (isEditable) return;
 
     const key = (e.key || "").toLowerCase();
