@@ -214,7 +214,8 @@
   function toolExtra(t){
     if (t==="marker") return {alpha:0.35};
     if (t==="highlighter") return {alpha:0.25, composite:"multiply"};
-    if (t==="spray") return {spacing:4, density:20};
+    //if (t==="spray") return {spacing:4, density:20};
+    if (t==="spray") return {spacing:4, density:20, dots:[]};
     if (t==="eraser") return {composite:"destination-out"};
     return {};
   }
@@ -245,6 +246,12 @@
         extra: toolExtra(tool),
         points: [ {xN:p.xN, yN:p.yN} ]
       };
+
+      // NYTT: initiera sprayens senaste punkt & ackumulator (i pixelvärden)
+      if (tool === "spray") {
+        currentStroke.extra._last = { x: p.x, y: p.y, acc: 0 };
+        currentStroke.extra.dots = []; // börja tom
+      }
     }
     redrawAll();
   }
@@ -267,6 +274,36 @@
       currentStroke.x2N=x2; currentStroke.y2N=y2;
     } else {
       currentStroke.points.push({xN:p.xN, yN:p.yN});
+
+      // NYTT: bygg spraypunkter löpande
+      if (currentStroke.tool === "spray") {
+        const extra = currentStroke.extra;
+        const last = extra._last || { x: p.x, y: p.y, acc: 0 };
+        const dx = p.x - last.x, dy = p.y - last.y;
+        const segLen = Math.hypot(dx, dy);
+        const spacing = extra.spacing ?? 4;
+        const density = extra.density ?? 20;
+        let acc = last.acc || 0;
+
+        // gå fram med "spacing"-steg längs segmentet och lägg prickar
+        while (acc <= segLen) {
+          const t = segLen === 0 ? 0 : acc / segLen;
+          const bx = last.x + dx * t;
+          const by = last.y + dy * t;
+
+          for (let k = 0; k < density; k++) {
+            const ang = Math.random() * Math.PI * 2;
+            const r = Math.random() * currentStroke.size;
+            const px = bx + Math.cos(ang) * r;
+            const py = by + Math.sin(ang) * r;
+            // spara NORMALISERAT så sprayen skalar snyggt vid resize
+            extra.dots.push({ xN: px / viewW, yN: py / viewH });
+          }
+          acc += spacing;
+        }
+        // spara “reststräcka” till nästa move
+        extra._last = { x: p.x, y: p.y, acc: acc - segLen };
+      }
     }
     redrawAll();
   }
@@ -333,21 +370,16 @@
     target.fillStyle = s.color;
 
     if (s.type==="free"){
-      if (s.tool==="spray"){
-        const pts = denorm(s.points);
-        const spacing = s.extra?.spacing ?? 4;
-        const density = s.extra?.density ?? 20;
-        let acc=0;
-        for (let i=1;i<pts.length;i++){
-          const a=pts[i-1], b=pts[i];
-          const segLen=Math.hypot(b.x-a.x,b.y-a.y);
-          acc += segLen;
-          while (acc>=spacing){
-            acc-=spacing;
-            const t=1-(acc/segLen);
-            const x=a.x*(t)+b.x*(1-t), y=a.y*(t)+b.y*(1-t);
-            sprayDot(target,x,y, s.size, density, s.color, s.alpha);
-          }
+      if (s.tool === "spray") {
+        const dots = s.extra?.dots || [];
+        target.globalAlpha = s.alpha ?? 0.6;
+        target.fillStyle = s.color;
+        const rr = Math.max(0.6, s.size * 0.05); // liten standardradie för prickarna
+        for (const d of dots) {
+          const x = d.xN * viewW, y = d.yN * viewH;
+          target.beginPath();
+          target.arc(x, y, rr, 0, Math.PI * 2);
+          target.fill();
         }
       } else {
         // standard
