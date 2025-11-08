@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="sv">
+<head>
+  <title>Skissa!</title>
+	<meta charset="utf-8">
+	<!-- <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0, minimum-scale=1.0, maximum-scale=1.0"> -->
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="theme-color" content="#9967E6">
+	<meta name="apple-mobile-web-app-title" content="Skissa!">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-status-bar-style" content="default">
+	<meta name="mobile-web-app-capable" content="yes">
+
+	<link rel="apple-touch-icon" href="img/webapp-icon.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="img/favicon-32x32.png">
+  <link rel="icon" type="image/png" sizes="16x16" href="img/favicon-16x16.png">
+
+	<!-- css -->
+	<link href="css/main.css" rel="stylesheet" type="text/css">
+</head>
+<body>
+  <div class="app">
+    <aside class="sidebar">
+      <!--<div class="brand"><span class="dot"></span>Skissa!</div>-->
+
+      <!-- Färg & storlek -->
+      <div class="card">
+        <div class="label">Färg & Pensel</div>
+        <div class="row" style="margin-bottom:8px">
+          <input id="colorPicker" type="color" value="#1f2937" />
+          <span class="badge" id="eyedrop">Pipett</span>
+          <span class="badge" id="fillToggle">Fyll: Av</span>
+        </div>
+        <div class="swatches" id="swatches"></div>
+        <div class="row" style="margin-top:8px">
+          <span class="muted">Storlek</span>
+          <input id="size" type="range" min="1" max="60" value="10" />
+          <div id="sizeVal" class="badge">10 px</div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <span class="muted">Opacitet</span>
+          <input id="alpha" type="range" min="0.05" max="1" step="0.05" value="1" />
+          <div id="alphaVal" class="badge">100%</div>
+        </div>
+      </div>
+
+      <!-- Verktyg -->
+      <div class="card">
+        <div class="label">Verktyg</div>
+        <div class="group3 tools-grid">
+          <div class="btn" data-tool="pen">
+            <span class="icon">✏️</span>
+            <span class="txt">Penna</span>
+          </div>
+          <div class="btn" data-tool="marker">
+            <span class="icon">🖍️</span>
+            <span class="txt">Marker</span>
+          </div>
+          <div class="btn" data-tool="eraser">
+            <span class="icon">🩹</span>
+            <span class="txt">Sudd</span>
+          </div>
+
+          <div class="btn" data-tool="line">
+            <span class="icon">📏</span>
+            <span class="txt">Linje</span>
+          </div>
+          <div class="btn" data-tool="rect">
+            <span class="icon">▭</span>
+            <span class="txt">Rektangel</span>
+          </div>
+          <div class="btn" data-tool="ellipse">
+            <span class="icon">◯</span>
+            <span class="txt">Cirkel</span>
+          </div>
+
+          <div class="btn" data-tool="spray">
+            <span class="icon">🫧</span>
+            <span class="txt">Spray</span>
+          </div>
+          <div class="btn" data-tool="highlighter">
+            <span class="icon">🟨</span>
+            <span class="txt">Överstrykn.</span>
+          </div>
+          <div class="btn" id="toggleSnap">
+            <span class="icon">🔳</span>
+            <span class="txt">Snappa: Av</span>
+          </div>
+        </div>
+
+        <!-- <div class="muted" style="margin-top:6px">
+          Håll <b>Shift</b> för perfekt kvadrat/cirkel när du drar rektangel/cirkel.
+        </div> -->
+      </div>
+
+      <!-- Lager -->
+      <div class="card">
+        <div class="label">Lager</div>
+        <div class="row" style="margin-bottom:8px">
+          <div class="btn" id="addLayer">＋ Nytt lager</div>
+          <div class="btn" id="removeLayer">－ Ta bort</div>
+        </div>
+        <div id="layers" class="layers"></div>
+      </div>
+
+      <!-- Rutnät -->
+      <div class="card">
+        <div class="label">Rutnät</div>
+        <div class="row" style="margin-bottom:8px">
+          <div class="btn" id="toggleGrid">Visa rutnät</div>
+          <div class="btn" id="gridColorBtn">Färg</div>
+        </div>
+        <div class="row">
+          <span class="muted">Storlek</span>
+          <input id="gridSize" type="range" min="8" max="100" value="32" />
+          <div id="gridSizeVal" class="badge">32 px</div>
+        </div>
+      </div>
+
+      <!-- Åtgärder -->
+      <div class="card">
+        <div class="label">Åtgärder</div>
+        <div class="group">
+          <div class="btn" id="undo">↶ Ångra</div>
+          <div class="btn" id="redo">↷ Gör om</div>
+          <div class="btn" id="clear">🗑️ Rensa lager</div>
+          <div class="btn" id="savePNG">💾 Spara PNG</div>
+          <div class="btn" id="saveSVG" style="grid-column:span 2">🧾 Exportera SVG</div>
+        </div>
+  	  <!--
+  	  <div class="muted" style="margin-top:6px">
+  		Kortkommandon: Ctrl/Cmd+Z (Ångra), Ctrl/Cmd+Y eller Shift+Z (Gör om). Verktyg: B=Penna, L=Linje, R=Rektangel, O=Cirkel, E=Sudd.
+  		</div>
+  		-->
+      </div>
+
+      <!-- <div class="muted">Allt körs lokalt i din webbläsare.</div> -->
+    </aside>
+
+    <section class="stage">
+      <canvas id="board"></canvas>
+      <div class="topbar">
+        <div class="crumb">
+          Verktyg: <span id="toolBadge" class="badge">Penna</span>
+          <span class="dotSep"></span>
+          Lager: <span id="layerBadge" class="badge">Lager 1</span>
+        </div>
+        <div><span id="status" class="badge">Redo</span></div>
+      </div>
+    </section>
+  </div>
+
+  <!-- js -->
+ <script src="js/jquery-3.7.1.min.js"></script>
+ <script src="js/main.js"></script>
+</body>
+</html>
