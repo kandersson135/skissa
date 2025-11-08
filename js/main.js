@@ -143,9 +143,28 @@
   const redoStack=[];
   $("#undo").on("click", undo);
   $("#redo").on("click", redo);
-  $("#clear").on("click", function(){ const L=layers[currentLayer]; if(!L) return; L.strokes.length=0; redrawAll(); setStatus("Rensade aktuellt lager."); });
+  //$("#clear").on("click", function(){ const L=layers[currentLayer]; if(!L) return; L.strokes.length=0; redrawAll(); setStatus("Rensade aktuellt lager."); });
   $("#savePNG").on("click", savePNG);
   $("#saveSVG").on("click", saveSVG);
+
+  $("#clear").on("click", function(){
+    const L = layers[currentLayer];
+    if (!L) return;
+
+    if (L.strokes.length === 0) {
+      setStatus("Lagret är redan tomt.");
+      return;
+    }
+
+    if (!confirm("Är du säker på att du vill rensa detta lager? Det går inte att ångra.")) {
+      setStatus("Rensning avbruten.");
+      return;
+    }
+
+    L.strokes.length = 0;
+    redrawAll();
+    setStatus("Rensade aktuellt lager.");
+  });
 
   $(window).off("keydown").on("keydown", function(e){
     // Undvik att stjäla tangenter när fokus är i inmatningsfält eller contenteditable
@@ -350,8 +369,6 @@
 
         target.globalAlpha = gAlpha;
 
-
-
         const pts = denorm(s.points);
         if (pts.length>1){
           target.beginPath(); target.moveTo(pts[0].x, pts[0].y);
@@ -512,5 +529,4 @@
   // ======= Starta layout EFTER allt är deklarerat =======
   window.addEventListener("resize", ()=>{ dpr=Math.max(1, Math.min(2, window.devicePixelRatio||1)); fitCanvas(); });
   setTimeout(fitCanvas,0);
-
 })(jQuery);
