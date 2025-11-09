@@ -34,10 +34,10 @@
   const $status=$("#status");
 
   // ======= Penselinställningar =======
-  let tool="pen", color="#1f2937", size=10, alpha=1, fillEnabled=false;
+  let tool="pen", color="#1f2937", size=10, alpha=1, fillEnabled=false, fillTolerance = 20;
 
   function setStatus(msg){ $status.text(msg); }
-  function toolName(t){ return {pen:"Penna", marker:"Marker", spray:"Spray", highlighter:"Överstrykn.", eraser:"Sudd", line:"Linje", rect:"Rektangel", ellipse:"Cirkel"}[t]||t; }
+  function toolName(t){ return {pen:"Penna", marker:"Marker", spray:"Spray", highlighter:"Överstrykn.", eraser:"Sudd", line:"Linje", rect:"Rektangel", ellipse:"Cirkel", fill:"Fyll"}[t]||t; }
   function setTool(t){ tool=t; $toolBadge.text(toolName(t)); $(".btn[data-tool]").removeClass("primary"); $(`.btn[data-tool="${t}"]`).addClass("primary"); setStatus(`Verktyg: ${toolName(t)}`); }
   function setColor(c){ color=c; $("#colorPicker").val(c); setStatus(`Färg: ${c}`); }
   function setSize(px){ size=Math.max(1, Math.min(60, px|0)); $("#sizeVal").text(size+" px"); }
@@ -145,7 +145,7 @@
   $("#redo").on("click", redo);
   //$("#clear").on("click", function(){ const L=layers[currentLayer]; if(!L) return; L.strokes.length=0; redrawAll(); setStatus("Rensade aktuellt lager."); });
   $("#savePNG").on("click", savePNG);
-  $("#saveSVG").on("click", saveSVG);
+  //$("#saveSVG").on("click", saveSVG);
 
   $("#clear").on("click", function(){
     const L = layers[currentLayer];
@@ -164,6 +164,11 @@
     L.strokes.length = 0;
     redrawAll();
     setStatus("Rensade aktuellt lager.");
+  });
+
+  $("#fillTol").on("input", function(){
+    fillTolerance = +this.value;
+    $("#fillTolVal").text(fillTolerance);
   });
 
   $(window).off("keydown").on("keydown", function(e){
@@ -185,6 +190,8 @@
     switch (key) {
       case "b": // Penna
         setTool("pen"); e.preventDefault(); break;
+      case "f": // Fyll
+        setTool("fill"); e.preventDefault(); break;
       case "l": // Linje
         setTool("line"); e.preventDefault(); break;
       case "r": // Rektangel
@@ -228,6 +235,22 @@
       const rgba = ctx.getImageData(Math.round(p.x*dpr), Math.round(p.y*dpr), 1, 1).data;
       const hex = rgbToHex(rgba[0],rgba[1],rgba[2]);
       setColor(hex); eyedropper=false; $("#eyedrop").removeClass("primary"); return;
+    }
+
+    if (tool === "fill") {
+      redoStack.length = 0;
+      const L = layers[currentLayer];
+      if (L){
+        L.strokes.push({
+          type: "fill",
+          layer: currentLayer,
+          xN: p.xN, yN: p.yN,
+          color, alpha,
+          tol: fillTolerance
+        });
+        redrawAll();
+      }
+      return; // inte gå vidare till freehand/shape
     }
 
     drawing = true; redoStack.length=0;
@@ -408,6 +431,11 @@
           target.stroke();
         }
       }
+    } else if (s.type === "fill") {
+      // Kör flood-fill på aktuell bitmap vid denna punkt
+      const sx = Math.floor(s.xN * viewW * dpr);
+      const sy = Math.floor(s.yN * viewH * dpr);
+      floodFillRGBA(target, sx, sy, s.color, s.alpha ?? 1, s.tol ?? 20);
     } else if (s.type==="shape"){
       const x1=s.x1N*viewW, y1=s.y1N*viewH, x2=s.x2N*viewW, y2=s.y2N*viewH;
       const left=Math.min(x1,x2), top=Math.min(y1,y2), w=Math.abs(x2-x1), h=Math.abs(y2-y1);
@@ -444,6 +472,92 @@
     target.restore();
   }
 
+  function floodFillRGBA(ctx2d, sx, sy, hex, aNew, tol){
+    const w = ctx2d.canvas.width, h = ctx2d.canvas.height;
+    if (sx<0||sy<0||sx>=w||sy>=h) return;
+
+    // Läs hela bilden en gång
+    const img = ctx2d.getImageData(0,0,w,h);
+    const data = img.data;
+
+    const idx = (sy*w + sx)*4;
+    const sr = data[idx], sg = data[idx+1], sb = data[idx+2], sa = data[idx+3];
+
+    // Om målfärgen (överlagrad) praktiskt taget matchar redan – skippa
+    const {r:tr,g:tg,b:tb} = hexToRgb(hex);
+
+    // Jämförelsefunktion: skillnad mot seed
+    const within = (i)=>{
+      const r=data[i], g=data[i+1], b=data[i+2], a=data[i+3];
+      // jämför bara RGB, ignorera alpha i seed (stabilare mot tidigare fyllningar)
+      return (Math.abs(r-sr) + Math.abs(g-sg) + Math.abs(b-sb)) <= tol*3;
+    };
+
+    // Om fill skulle vara exakt samma som seed vid aNew=1, kan vi hoppa, annars kör.
+    // (Vi låter fyll ske ändå om alpha<1 för att tonas in)
+    const stack = [sx, sy];
+    const visited = new Uint8Array(w*h); // 1 byte/pixel
+
+    // Preppa blandning
+    const aFill = Math.max(0, Math.min(1, aNew));
+    function blendAt(i){
+      const r0=data[i], g0=data[i+1], b0=data[i+2], a0=data[i+3]/255;
+      const ao = aFill + a0*(1-aFill);
+      const r = Math.round((tr*aFill + r0*a0*(1-aFill)) / (ao || 1));
+      const g = Math.round((tg*aFill + g0*a0*(1-aFill)) / (ao || 1));
+      const b = Math.round((tb*aFill + b0*a0*(1-aFill)) / (ao || 1));
+      data[i]   = r;
+      data[i+1] = g;
+      data[i+2] = b;
+      data[i+3] = Math.round(ao*255);
+    }
+
+    while (stack.length){
+      const y = stack.pop();
+      const x = stack.pop();
+      let xi = x, i = (y*w + xi)*4;
+
+      // skanna vänster
+      while (xi>=0 && !visited[y*w+xi] && within(i)){
+        visited[y*w+xi]=1;
+        blendAt(i);
+        xi--; i-=4;
+      }
+      const left = xi+1;
+
+      // skanna höger
+      xi = x+1; i = (y*w + xi)*4;
+      while (xi<w && !visited[y*w+xi] && within(i)){
+        visited[y*w+xi]=1;
+        blendAt(i);
+        xi++; i+=4;
+      }
+      const right = xi-1;
+
+      // lägg upp och ner mellan left..right
+      for (let xx=left; xx<=right; xx++){
+        const upY = y-1, downY = y+1;
+        if (upY>=0){
+          const ii = (upY*w + xx)*4;
+          if (!visited[upY*w+xx] && within(ii)) { stack.push(xx, upY); }
+        }
+        if (downY<h){
+          const ii = (downY*w + xx)*4;
+          if (!visited[downY*w+xx] && within(ii)) { stack.push(xx, downY); }
+        }
+      }
+    }
+
+    ctx2d.putImageData(img, 0, 0);
+  }
+
+  function hexToRgb(hex){
+    const h = hex.replace("#","").trim();
+    const n = h.length===3 ? h.split("").map(c=>c+c).join("") : h;
+    const num = parseInt(n,16);
+    return { r:(num>>16)&255, g:(num>>8)&255, b:num&255 };
+  }
+
   // ======= Undo/Redo =======
   function undo(){
     const L=layers[currentLayer]; if(!L) return;
@@ -475,85 +589,139 @@
     setStatus("PNG sparad.");
   }
 
-  function saveSVG(){
-    const W=viewW, H=viewH;
-    let svg = [];
-    svg.push(`<?xml version="1.0" encoding="UTF-8"?>`);
-    svg.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`);
-    svg.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`);
-    const esc = s => String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
-    const pathFromPts = (pts) => {
-      if (!pts.length) return "";
-      let d = `M ${pts[0].x} ${pts[0].y}`;
-      for (let i=1;i<pts.length;i++) d += ` L ${pts[i].x} ${pts[i].y}`;
-      return d;
-    };
-    layers.forEach(L=>{
-      if(!L.visible) return;
-      svg.push(`<g data-layer="${esc(L.name)}">`);
-      for (const s of L.strokes){
-        if (s.type==="free"){
-          if (s.tool==="spray"){
-            const pts = s.points.map(p=>({x:p.xN*W,y:p.yN*H}));
-            const spacing = s.extra?.spacing ?? 4;
-            const density = s.extra?.density ?? 18;
-            let acc=0;
-            for (let i=1;i<pts.length;i++){
-              const a=pts[i-1], b=pts[i];
-              const segLen=Math.hypot(b.x-a.x,b.y-a.y);
-              acc+=segLen;
-              while(acc>=spacing){
-                acc-=spacing;
-                const t=1-(acc/segLen);
-                const x=a.x*(t)+b.x*(1-t), y=a.y*(t)+b.y*(1-t);
-                for (let k=0;k<density;k++){
-                  const ang=Math.random()*Math.PI*2, r=Math.random()*s.size;
-                  const px=x+Math.cos(ang)*r, py=y+Math.sin(ang)*r;
-                  const rr=Math.max(0.6, s.size*0.05*Math.random()*1.2);
-                  svg.push(`<circle cx="${px.toFixed(2)}" cy="${py.toFixed(2)}" r="${rr.toFixed(2)}" fill="${esc(s.color)}" fill-opacity="${(s.alpha??0.6)}"/>`);
-                }
-              }
-            }
-          } else {
-            const pts = s.points.map(p=>({x:p.xN*W,y:p.yN*H}));
-            if (pts.length<2) continue;
-            //let stroke = s.color, strokeWidth = s.size, opacity = (s.tool==="marker" ? (s.alpha??0.35) : (s.tool==="highlighter" ? (s.alpha??0.25) : (s.alpha??1)));
-            let stroke = s.color, strokeWidth = s.size;
-            let baseOpacity = (s.alpha ?? 1);
-            let opacity = baseOpacity;
-
-            if (s.tool === "marker") {
-              opacity = Math.min(baseOpacity, 0.35);
-            } else if (s.tool === "highlighter") {
-              opacity = Math.min(baseOpacity, 0.25);
-            }
-
-            if (s.tool==="eraser"){ stroke="#ffffff"; opacity=1; }
-            const d = pathFromPts(pts);
-            svg.push(`<path d="${d}" fill="none" stroke="${esc(stroke)}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${opacity}"/>`);
-          }
-        } else if (s.type==="shape"){
-          const x1=s.x1N*W, y1=s.y1N*H, x2=s.x2N*W, y2=s.y2N*H;
-          const left=Math.min(x1,x2), top=Math.min(y1,y2), w=Math.abs(x2-x1), h=Math.abs(y2-y1);
-          const stroke=esc(s.color), strokeWidth=s.size, opacity=(s.alpha??1), fill = s.fill? esc(s.color) : "none", fillOpacity=(s.fill ? (s.alpha??1) : 0);
-          if (s.shape==="line"){
-            svg.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-linecap="round" stroke-opacity="${opacity}"/>`);
-          } else if (s.shape==="rect"){
-            svg.push(`<rect x="${left}" y="${top}" width="${w}" height="${h}" fill="${fill}" fill-opacity="${fillOpacity}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${opacity}"/>`);
-          } else if (s.shape==="ellipse"){
-            svg.push(`<ellipse cx="${left+w/2}" cy="${top+h/2}" rx="${Math.max(0.5,w/2)}" ry="${Math.max(0.5,h/2)}" fill="${fill}" fill-opacity="${fillOpacity}" stroke="${stroke}" stroke-width="${strokeWidth}" stroke-opacity="${opacity}"/>`);
-          }
-        }
-      }
-      svg.push(`</g>`);
-    });
-    svg.push(`</svg>`);
-    const blob = new Blob([svg.join("\n")], {type:"image/svg+xml;charset=utf-8"});
-    const url = URL.createObjectURL(blob);
-    const a=document.createElement("a"); a.href=url; a.download=`ritning_${Date.now()}.svg`;
-    document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url), 1000);
-    setStatus("SVG exporterad.");
-  }
+  // function saveSVG(){
+  //   const W = viewW, H = viewH;
+  //
+  //   // 1) Finns det några fill-strokes?
+  //   const hasFill = layers.some(L => L.visible && L.strokes.some(s => s.type === "fill"));
+  //
+  //   // 2) Om fill finns: rasterisera hela teckningen och bädda in som <image> i SVG.
+  //   if (hasFill) {
+  //     // Rendera precis som i savePNG()
+  //     const exportCanvas = document.createElement("canvas");
+  //     exportCanvas.width  = Math.round(W * dpr);
+  //     exportCanvas.height = Math.round(H * dpr);
+  //     const ex = exportCanvas.getContext("2d");
+  //     ex.setTransform(dpr,0,0,dpr,0,0);
+  //     ex.fillStyle = "#ffffff";
+  //     ex.fillRect(0,0,W,H);
+  //
+  //     // rita ALLT (inkl. fill) i rätt ordning
+  //     layers.forEach(L=>{
+  //       if (!L.visible) return;
+  //       for (const s of L.strokes) drawStroke(ex, s);
+  //     });
+  //
+  //     // Gör PNG-data-URL och bädda in den i en minimal SVG
+  //     const dataURL = exportCanvas.toDataURL("image/png");
+  //     const svg = `
+  // <?xml version="1.0" encoding="UTF-8"?>
+  // <svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">
+  //   <image x="0" y="0" width="${W}" height="${H}" href="${dataURL}" />
+  // </svg>`.trim();
+  //
+  //     const blob = new Blob([svg], {type:"image/svg+xml;charset=utf-8"});
+  //     const url = URL.createObjectURL(blob);
+  //     const a=document.createElement("a"); a.href=url; a.download=`ritning_${Date.now()}.svg`;
+  //     document.body.appendChild(a); a.click(); a.remove();
+  //     setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  //     setStatus("SVG exporterad (fyll inbäddad som raster).");
+  //     return;
+  //   }
+  //
+  //   // 3) Annars: exportera som ren vektor (din befintliga logik)
+  //   let svg = [];
+  //   svg.push(`<?xml version="1.0" encoding="UTF-8"?>`);
+  //   svg.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}">`);
+  //   svg.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#ffffff"/>`);
+  //
+  //   const esc = s => String(s).replace(/&/g,"&amp;").replace(/"/g,"&quot;").replace(/</g,"&lt;");
+  //   const pathFromPts = (pts) => {
+  //     if (!pts.length) return "";
+  //     let d = `M ${pts[0].x} ${pts[0].y}`;
+  //     for (let i=1;i<pts.length;i++) d += ` L ${pts[i].x} ${pts[i].y}`;
+  //     return d;
+  //   };
+  //
+  //   layers.forEach(L=>{
+  //     if(!L.visible) return;
+  //     svg.push(`<g data-layer="${esc(L.name)}">`);
+  //     for (const s of L.strokes) {
+  //       // (ingen fill här, för ren vektor-export)
+  //       if (s.type==="free"){
+  //         if (s.tool === "spray"){
+  //           const dots = s.extra?.dots || [];
+  //           const opacity = s.alpha ?? 0.6;
+  //           for (const d of dots) {
+  //             const x = d.xN * W, y = d.yN * H;
+  //             const rr = Math.max(0.6, (s.size * (d.f ?? 0.05)));
+  //             svg.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${rr.toFixed(2)}" fill="${esc(s.color)}" fill-opacity="${opacity}"/>`);
+  //           }
+  //         } else if (s.tool === "charcoal"){
+  //           const pts = s.points.map(p=>({x:p.xN*W, y:p.yN*H}));
+  //           let opacity = Math.min(s.alpha ?? 0.4, 0.4);
+  //           for (let i=1;i<pts.length;i++){
+  //             const a=pts[i-1], b=pts[i];
+  //             const dx=b.x-a.x, dy=b.y-a.y;
+  //             const len=Math.hypot(dx,dy);
+  //             const steps = Math.max(1, Math.ceil(len/2));
+  //             for (let j=0;j<steps;j++){
+  //               const t = j/steps;
+  //               const x = a.x + dx*t + (Math.random()-0.5)*(s.extra?.jitter ?? 2);
+  //               const y = a.y + dy*t + (Math.random()-0.5)*(s.extra?.jitter ?? 2);
+  //               const rr = Math.max(0.8, s.size*0.22);
+  //               svg.push(`<circle cx="${x.toFixed(2)}" cy="${y.toFixed(2)}" r="${rr.toFixed(2)}" fill="${esc(s.color)}" fill-opacity="${opacity}"/>`);
+  //             }
+  //           }
+  //         } else if (s.tool === "ink"){
+  //           const pts = s.points.map(p=>({x:p.xN*W,y:p.yN*H}));
+  //           if (pts.length>1){
+  //             let d = pathFromPts(pts);
+  //             svg.push(`<path d="${d}" fill="none" stroke="${esc(s.color)}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${s.alpha ?? 1}"/>`);
+  //           }
+  //         } else if (s.tool === "watercolor"){
+  //           const pts = s.points.map(p=>({x:p.xN*W,y:p.yN*H}));
+  //           if (pts.length>1){
+  //             let d = pathFromPts(pts);
+  //             const opacity = Math.min(s.alpha ?? 0.2, 0.2);
+  //             svg.push(`<path d="${d}" fill="none" stroke="${esc(s.color)}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${opacity}"/>`);
+  //           }
+  //         } else {
+  //           // pen/marker/highlighter/eraser default
+  //           const pts = s.points.map(p=>({x:p.xN*W,y:p.yN*H}));
+  //           if (pts.length<2) continue;
+  //           let stroke = s.color;
+  //           let opacity = (s.alpha ?? 1);
+  //           if (s.tool==="marker") opacity = Math.min(opacity, 0.35);
+  //           if (s.tool==="highlighter") opacity = Math.min(opacity, 0.25);
+  //           if (s.tool==="eraser"){ stroke="#ffffff"; opacity=1; }
+  //           const d = pathFromPts(pts);
+  //           svg.push(`<path d="${d}" fill="none" stroke="${esc(stroke)}" stroke-width="${s.size}" stroke-linecap="round" stroke-linejoin="round" stroke-opacity="${opacity}"/>`);
+  //         }
+  //       } else if (s.type==="shape"){
+  //         const x1=s.x1N*W, y1=s.y1N*H, x2=s.x2N*W, y2=s.y2N*H;
+  //         const left=Math.min(x1,x2), top=Math.min(y1,y2), w=Math.abs(x2-x1), h=Math.abs(y2-y1);
+  //         const stroke=esc(s.color), sw=s.size, opacity=(s.alpha??1), fill = s.fill? esc(s.color) : "none", fillOpacity=(s.fill ? (s.alpha??1) : 0);
+  //         if (s.shape==="line"){
+  //           svg.push(`<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="${stroke}" stroke-width="${sw}" stroke-linecap="round" stroke-opacity="${opacity}"/>`);
+  //         } else if (s.shape==="rect"){
+  //           svg.push(`<rect x="${left}" y="${top}" width="${w}" height="${h}" fill="${fill}" fill-opacity="${fillOpacity}" stroke="${stroke}" stroke-width="${sw}" stroke-opacity="${opacity}"/>`);
+  //         } else if (s.shape==="ellipse"){
+  //           svg.push(`<ellipse cx="${left+w/2}" cy="${top+h/2}" rx="${Math.max(0.5,w/2)}" ry="${Math.max(0.5,h/2)}" fill="${fill}" fill-opacity="${fillOpacity}" stroke="${stroke}" stroke-width="${sw}" stroke-opacity="${opacity}"/>`);
+  //         }
+  //       }
+  //     }
+  //     svg.push(`</g>`);
+  //   });
+  //   svg.push(`</svg>`);
+  //
+  //   const blob = new Blob([svg.join("\n")], {type:"image/svg+xml;charset=utf-8"});
+  //   const url = URL.createObjectURL(blob);
+  //   const a=document.createElement("a"); a.href=url; a.download=`ritning_${Date.now()}.svg`;
+  //   document.body.appendChild(a); a.click(); a.remove();
+  //   setTimeout(()=>URL.revokeObjectURL(url), 1000);
+  //   setStatus("SVG exporterad.");
+  // }
 
   // ======= Hjälp =======
   function rgbToHex(r,g,b){ return "#"+[r,g,b].map(v=>v.toString(16).padStart(2,"0")).join(""); }
