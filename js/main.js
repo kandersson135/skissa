@@ -237,20 +237,29 @@
       setColor(hex); eyedropper=false; $("#eyedrop").removeClass("primary"); return;
     }
 
+    // if (tool === "fill") {
+    //   redoStack.length = 0;
+    //   const L = layers[currentLayer];
+    //   if (L){
+    //     L.strokes.push({
+    //       type: "fill",
+    //       layer: currentLayer,
+    //       xN: p.xN, yN: p.yN,
+    //       color, alpha,
+    //       tol: fillTolerance
+    //     });
+    //     redrawAll();
+    //   }
+    //   return; // inte gå vidare till freehand/shape
+    // }
+
     if (tool === "fill") {
-      redoStack.length = 0;
       const L = layers[currentLayer];
-      if (L){
-        L.strokes.push({
-          type: "fill",
-          layer: currentLayer,
-          xN: p.xN, yN: p.yN,
-          color, alpha,
-          tol: fillTolerance
-        });
-        redrawAll();
+      if (L) {
+        L.strokes.push({ type: "fill", layer: currentLayer, xN: p.xN, yN: p.yN, color, alpha, tol: fillTolerance });
+        setTimeout(redrawAll, 50); // <--- låter webbläsaren andas
       }
-      return; // inte gå vidare till freehand/shape
+      return;
     }
 
     drawing = true; redoStack.length=0;
