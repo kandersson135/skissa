@@ -37,7 +37,7 @@
   let tool="pen", color="#1f2937", size=10, alpha=1, fillEnabled=false, fillTolerance = 20;
 
   function setStatus(msg){ $status.text(msg); }
-  function toolName(t){ return {pen:"Penna", marker:"Marker", spray:"Spray", highlighter:"Överstrykn.", eraser:"Sudd", line:"Linje", rect:"Rektangel", ellipse:"Cirkel", fill:"Fyll"}[t]||t; }
+  function toolName(t){ return {pen:"Pensel", marker:"Marker", spray:"Spray", highlighter:"Överstrykn.", eraser:"Sudd", line:"Linje", rect:"Rektangel", ellipse:"Cirkel", fill:"Fyll"}[t]||t; }
   function setTool(t){ tool=t; $toolBadge.text(toolName(t)); $(".btn[data-tool]").removeClass("primary"); $(`.btn[data-tool="${t}"]`).addClass("primary"); setStatus(`Verktyg: ${toolName(t)}`); }
   function setColor(c){ color=c; $("#colorPicker").val(c); setStatus(`Färg: ${c}`); }
   function setSize(px){ size=Math.max(1, Math.min(60, px|0)); $("#sizeVal").text(size+" px"); }
