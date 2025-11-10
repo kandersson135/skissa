@@ -42,7 +42,7 @@
   function setColor(c){ color=c; $("#colorPicker").val(c); setStatus(`Färg: ${c}`); }
   function setSize(px){ size=Math.max(1, Math.min(60, px|0)); $("#sizeVal").text(size+" px"); }
   function setAlpha(a){ alpha = Math.max(0.05, Math.min(1, +a)); $("#alphaVal").text(Math.round(alpha*100)+"%"); }
-  function toggleFill(){ fillEnabled=!fillEnabled; $("#fillToggle").text("Fyll: "+(fillEnabled?"På":"Av")); }
+  function toggleFill(){ fillEnabled=!fillEnabled; $("#fillToggle").text("Fyll för former: "+(fillEnabled?"På":"Av")); }
   function updateBadges(){ $layerBadge.text(layers[currentLayer]?.name||"-"); }
 
   // ======= Lager-funktioner =======
