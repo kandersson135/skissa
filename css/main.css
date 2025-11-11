@@ -41,7 +41,7 @@ body {
     padding: 16px;
     gap: 14px;
     overflow: auto;
-     scrollbar-width: thin;
+    scrollbar-width: thin;
 }
 .brand {
     font-weight: 800;
